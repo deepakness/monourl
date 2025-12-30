@@ -519,11 +519,11 @@
     // Functions
     async function load() {
       try {
-        if (location.hash !== '') {
+        if (location.hash && location.hash.length > 1) {
           await set(location.hash);
         } else {
           const saved = localStorage.getItem('monourl_hash');
-          if (saved) {
+          if (saved && saved.length > 1) {
             await set(saved);
             if (editor.textContent) {
               history.replaceState({}, '', await get());
@@ -531,8 +531,10 @@
           }
         }
       } catch (e) {
-        console.error('Load error:', e);
+        // Clear corrupted data
         editor.textContent = '';
+        history.replaceState({}, '', location.pathname);
+        try { localStorage.removeItem('monourl_hash'); } catch (e) {}
       }
       
       editor.focus();
@@ -560,8 +562,10 @@
     }
 
     async function set(hash) {
-      if (!hash) return;
-      const content = await decompress(hash.slice(1));
+      if (!hash || hash.length <= 1) return;
+      const compressed = hash.slice(1);
+      if (!compressed) return;
+      const content = await decompress(compressed);
       editor.textContent = content;
     }
 
@@ -720,7 +724,9 @@
     }
 
     async function decompress(b64) {
+      if (!b64 || b64.length === 0) return '';
       const byteArray = base64urlToUint8(b64);
+      if (byteArray.length === 0) return '';
       const stream = new DecompressionStream('deflate-raw');
       const writer = stream.writable.getWriter();
       writer.write(byteArray);
@@ -739,14 +745,18 @@
     }
 
     function base64urlToUint8(base64url) {
-      const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
-      const binary = atob(padded);
-      const uint8 = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        uint8[i] = binary.charCodeAt(i);
+      try {
+        const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+        const binary = atob(padded);
+        const uint8 = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          uint8[i] = binary.charCodeAt(i);
+        }
+        return uint8;
+      } catch (e) {
+        return new Uint8Array(0);
       }
-      return uint8;
     }
 
     function debounce(ms, fn) {
